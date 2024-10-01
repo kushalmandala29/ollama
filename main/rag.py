@@ -5,6 +5,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from typing import Optional
 import bs4
+from typing import List, Tuple, Dict, Any
+from langchain.schema import BaseRetriever, Document
 from langchain.chains import create_retrieval_chain
 # from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.document_loaders import WebBaseLoader
@@ -13,7 +15,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.chains import create_history_aware_retriever
+# from langchain.chains import create_history_aware_retriever
+from typing import List, Tuple
+from langchain.schema import BaseRetriever, Document
 from langchain_core.prompts import MessagesPlaceholder
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate, ChatPromptTemplate
@@ -83,7 +87,7 @@ def create_custom_document_chain(llm, prompt_template=None):
     return stuff_chain
 
 # Usage
-def create_custom_document_chain(retrival, qa_chain):
+def create_custom_retrival_chain(retrival, qa_chain):
     retrival_prompt=PromptTemplate(
         template="Given the following question, retrieve relevant information: {question}",
         input_variables=['question']   
@@ -114,6 +118,35 @@ def create_custom_document_chain(retrival, qa_chain):
     return CustomRetrivalChain(retrival,qa_chain)
 
 
+class HistoryAwareRetriever:
+    def __init__(self, base_retriever: BaseRetriever, llm, context_prompt: str):
+        self.base_retriever = base_retriever
+        self.llm = llm
+        self.context_prompt = context_prompt
+
+    def get_relevant_documents(self, query: str, chat_history: List[Tuple[str, str]] = None) -> List[Document]:
+        if chat_history:
+            # Format chat history
+            formatted_history = "\n".join([f"Human: {h}\nAI: {a}" for h, a in chat_history])
+            
+            # Create a prompt that includes the chat history and the current query
+            full_prompt = f"{self.context_prompt}\n\nChat History:\n{formatted_history}\n\nCurrent Question: {query}\n\nReformulated Question:"
+            
+            # Use the LLM to reformulate the query based on the chat history
+            reformulated_query = self.llm(full_prompt).strip()
+        else:
+            reformulated_query = query
+
+        # Use the base retriever to get relevant documents
+        return self.base_retriever.get_relevant_documents(reformulated_query)
+
+def create_custom_history_aware_retriever(
+    llm, 
+    retriever: BaseRetriever, 
+    context_prompt: str
+) -> HistoryAwareRetriever:
+    return HistoryAwareRetriever(retriever, llm, context_prompt)
+
 
 
 
@@ -142,9 +175,7 @@ contextualize_q_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-history_aware_retriever = create_history_aware_retriever(
-    llm, retriever, contextualize_q_prompt
-)
+history_aware_retriever = create_custom_history_aware_retriever(llm, retriever, contextualize_q_prompt)
 
 
 system_prompt = (
@@ -167,4 +198,8 @@ qa_prompt = ChatPromptTemplate.from_messages(
 
 question_answer_chain = create_custom_document_chain(llm, qa_prompt)    
 
-rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+rag_chain = create_custom_retrival_chain(history_aware_retriever, question_answer_chain)
+
+
+response = rag_chain.run({"input": "What is Task Decomposition?"})
+print(response["answer"])
