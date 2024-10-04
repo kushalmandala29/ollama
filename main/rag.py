@@ -196,7 +196,7 @@ qa_prompt = ChatPromptTemplate.from_messages(
 )
 
 
-question_answer_chain = create_custom_document_chain(llm, qa_prompt)    
+question_answer_chain = create_custom_document_chain(llm, qa_prompt)        
 
 rag_chain = create_custom_retrival_chain(history_aware_retriever, question_answer_chain)
 
